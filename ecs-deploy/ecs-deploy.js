@@ -98,6 +98,7 @@ Promise.resolve()
       process.stdout.write('.');
       exec(`sleep ${SLEEP}`);
     }
+    process.stdout.write('\n');
 
     // Timeout, rollback
     console.log(red(`Timeout after ${MAX_TRIES * SLEEP} seconds`));
