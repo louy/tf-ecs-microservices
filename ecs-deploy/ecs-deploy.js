@@ -43,7 +43,7 @@ const argv = (() => {
 
 const required = ['region', 'cluster', 'service', 'image'];
 if (required.some(key => !argv[key])) {
-  console.log('Usage: node deploy-ecs.js --region region --cluster cluster --service service --image image ');
+  console.log('Usage: node deploy-ecs.js --region region --cluster cluster --service service --image image [--timeout 60]');
   process.exit(1);
 }
 
@@ -65,6 +65,9 @@ function updateService(taskDefinitionArn) {
   return aws(`ecs update-service --region "${region}" --cluster "${cluster}" --service "${service}" --task-definition "${taskDefinitionArn}" --output json`).service
 }
 
+const SLEEP = 2;
+const maxTries = (parseInt(argv.timeout, 10) || 60) / SLEEP
+
 Promise.resolve()
   .then(() => {
     const oldTaskDefinitionArn = getService().taskDefinition;
@@ -82,26 +85,23 @@ Promise.resolve()
 
     const newService = updateService(newTaskDefinition.taskDefinitionArn);
 
-    const SLEEP = 2;
-    const MAX_TRIES = 30;
-
     console.log(`Waiting for service ${service} to be deployed`);
 
     // Wait to see if more than 1 deployment stays running
-    for (let i = 0; i < MAX_TRIES; ++ i) {
+    for (let i = 0; i <= maxTries; ++ i) {
       const {deployments} = getService();
       if (deployments.length <= 1) {
         process.stdout.write('\n');
         console.log(`New version of ${service} deployed successfully`);
         return;
       }
-      process.stdout.write('.');
+      process.stdout.write(i % 10 === 9 ? '|' : '.');
       exec(`sleep ${SLEEP}`);
     }
     process.stdout.write('\n');
 
     // Timeout, rollback
-    console.log(red(`Timeout after ${MAX_TRIES * SLEEP} seconds`));
+    console.log(red(`Timeout after ${maxTries * SLEEP} seconds`));
 
     console.log(`Rolling back to ${oldTaskDefinitionArn}`);
     updateService(oldTaskDefinitionArn);
