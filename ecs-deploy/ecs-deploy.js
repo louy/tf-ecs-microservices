@@ -1,30 +1,33 @@
-const execSync = require('child_process').execSync;
+const {execSync} = require('child_process');
 
 function exec(args) {
   return execSync(args, { stdio: [void 0, void 0, process.stderr] }).toString();
 }
 
 // take process arguments and convert them into an object
-const argv = {};
-let lastArg = null;
-process.argv.forEach((arg, index, array) => {
-  if (arg.indexOf('--') === 0) {
+const argv = (() => {
+  const argv = {};
+  let lastArg = null;
+  process.argv.forEach((arg, index, array) => {
+    if (arg.indexOf('--') === 0) {
+      if (lastArg) {
+        argv[lastArg] = true;
+        lastArg = null;
+      }
+      lastArg = arg.substr(2);
+      if (array.length === index + 1) {
+        // if it's the last one
+        argv[arg.substr(2)] = true;
+      }
+      return;
+    }
     if (lastArg) {
-      argv[lastArg] = true;
+      argv[lastArg] = arg;
       lastArg = null;
     }
-    lastArg = arg.substr(2);
-    if (array.length === index + 1) {
-      // if it's the last one
-      argv[arg.substr(2)] = true;
-    }
-    return;
-  }
-  if (lastArg) {
-    argv[lastArg] = arg;
-    lastArg = null;
-  }
-});
+  });
+  return argv;
+})();
 
 const required = ['region', 'cluster', 'service', 'image'];
 if (required.some(key => !argv[key])) {
@@ -32,25 +35,46 @@ if (required.some(key => !argv[key])) {
   process.exit(1);
 }
 
-const region = argv.region;
-const cluster = argv.cluster;
-const service = argv.service;
-const image = argv.image;
-const existingServices = JSON.parse(exec(`aws ecs describe-services --region "${region}" --cluster "${cluster}" --services "${service}" --output json`)).services;
-const oldTaskDefinitionArn = existingServices[0].taskDefinition;
-console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
+const {region, cluster, service, image} = argv;
 
-const existingTaskDefinition = JSON.parse(exec(`aws ecs describe-task-definition --region "${region}" --task-definition "${oldTaskDefinitionArn}" --output json`)).taskDefinition;
+function getService() {
+  return JSON.parse(exec(`aws ecs describe-services --region "${region}" --cluster "${cluster}" --services "${service}" --output json`)).services[0];
+}
 
-const family = existingTaskDefinition.family;
-const containerDefinitions = existingTaskDefinition.containerDefinitions;
-if (containerDefinitions.length !== 1) throw new Error('Task definitions with more than one container are not supported');
-containerDefinitions[0].image = image;
+function getTaskDefinition(arn) {
+  return JSON.parse(exec(`aws ecs describe-task-definition --region "${region}" --task-definition "${arn}" --output json`)).taskDefinition;
+}
 
-const newTaskDefinition = JSON.parse(exec(`aws ecs register-task-definition --region "${region}" --family "${family}" --container-definitions '${JSON.stringify(containerDefinitions)}' --output json`)).taskDefinition;
+function updateTaskDefinition(family, containerDefinitions) {
+  return JSON.parse(exec(`aws ecs register-task-definition --region "${region}" --family "${family}" --container-definitions '${JSON.stringify(containerDefinitions)}' --output json`)).taskDefinition;
+}
 
-console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
+function updateService(taskDefinitionArn) {
+  return JSON.parse(exec(`aws ecs update-service --region "${region}" --cluster "${cluster}" --service "${service}" --task-definition "${taskDefinitionArn}" --output json`)).service
+}
 
-const newService = JSON.parse(exec(`aws ecs update-service --region "${region}" --cluster "${cluster}" --service "${service}"  --task-definition "${newTaskDefinition.taskDefinitionArn}" --output json`)).service;
+Promise.resolve()
+  .then(() => {
+    const oldTaskDefinitionArn = getService().taskDefinition;
+    console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
 
-console.log(`New version of ${newService.serviceName} deployed successfully`);
+    const {family, containerDefinitions} = getTaskDefinition(oldTaskDefinitionArn);
+    if (containerDefinitions.length !== 1) {
+      throw new Error('Task definitions with more than one container are not supported');
+    }
+
+    const newTaskDefinition = updateTaskDefinition(family, [
+      {...containerDefinitions[0], image} // update image field
+    ]);
+    console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
+
+    const newService = updateService(newTaskDefinition.taskDefinitionArn);
+    console.log(`New version of ${newService.serviceName} deployed successfully`);
+  })
+  .then(() => process.exit(0))
+  .catch(error => {
+    process.stdout.write('\x1b[31m'); // red
+    console.error(error.stack);
+    process.stdout.write('\x1b[0m'); // reset
+    process.exit(1);
+  });
