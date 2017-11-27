@@ -5,7 +5,7 @@ function red(string) {
 }
 
 function exec(args) {
-  return execSync(args, { stdio: [void 0, void 0, process.stderr] }).toString();
+  return execSync(args, { stdio: [void 0, void 0, process.stderr], env: process.env }).toString();
 }
 
 function aws(cmd) {
