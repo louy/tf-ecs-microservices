@@ -57,8 +57,25 @@ function getTaskDefinition(arn) {
   return aws(`ecs describe-task-definition --region "${region}" --task-definition "${arn}" --output json`).taskDefinition;
 }
 
-function updateTaskDefinition(family, containerDefinitions) {
-  return aws(`ecs register-task-definition --region "${region}" --family "${family}" --container-definitions '${JSON.stringify(containerDefinitions)}' --output json`).taskDefinition;
+function updateTaskDefinition(family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints) {
+  let params = [
+    `--region "${region}"`,
+    `--family "${family}"`,
+    `--container-definitions '${JSON.stringify(containerDefinitions)}'`,
+  ];
+  if (taskRoleArn) {
+    params.push(`--task-role-arn ${taskRoleArn}`);
+  }
+  if (networkMode) {
+    params.push(`--network-mode ${networkMode}`);
+  }
+  if (volumes) {
+    params.push(`--volumes '${JSON.stringify(volumes)}'`);
+  }
+  if (placementConstraints) {
+    params.push(`--placement-constraints '${JSON.stringify(placementConstraints)}'`);
+  }
+  return aws(`ecs register-task-definition ${params.join(' ')} --output json`).taskDefinition;
 }
 
 function updateService(taskDefinitionArn) {
@@ -73,14 +90,14 @@ Promise.resolve()
     const oldTaskDefinitionArn = getService().taskDefinition;
     console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
 
-    const {family, containerDefinitions} = getTaskDefinition(oldTaskDefinitionArn);
+    const {family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints} = getTaskDefinition(oldTaskDefinitionArn);
     if (containerDefinitions.length !== 1) {
       throw new Error('Task definitions with more than one container are not supported');
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
       {...containerDefinitions[0], image} // update image field
-    ]);
+    ], taskRoleArn, networkMode, volumes, placementConstraints);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
     const newService = updateService(newTaskDefinition.taskDefinitionArn);
