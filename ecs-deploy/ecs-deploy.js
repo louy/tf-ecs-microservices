@@ -18,8 +18,9 @@ function aws(cmd) {
 
 function printUsage() {
   console.log('Usage:');
-  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--timeout 60]');
-  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --container-definition-patch \'{"image":"image"}\' [--timeout 60]');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\']');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60]');
 }
 
 // take process arguments and convert them into an object
@@ -47,12 +48,8 @@ const argv = (() => {
   return argv;
 })();
 
-const required = ['region', 'cluster', 'service'];
-if (
-  required.some(key => !argv[key]) ||
-  (!argv.image && !argv['container-definition-patch']) ||
-  (argv.image && argv['container-definition-patch'])
-) {
+const required = ['region', 'cluster', 'service', 'image'];
+if (required.some(key => !argv[key])) {
   printUsage();
   process.exit(1);
 }
@@ -61,9 +58,7 @@ const {region, cluster, service, image} = argv;
 
 // validate container-definition
 let containerDefinitionPatch;
-if (image) {
-  containerDefinitionPatch = {image};
-} else {
+if (argv['container-definition-patch']) {
   try {
     containerDefinitionPatch = JSON.parse(argv['container-definition-patch']);
     if (('' + containerDefinitionPatch) !== '[object Object]') throw new Error('Invalid container-definition patch');
@@ -123,7 +118,7 @@ Promise.resolve()
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
-      {...containerDefinitions[0], ...containerDefinitionPatch} // apply patch
+      {...containerDefinitions[0], ...containerDefinitionPatch, image} // apply patch
     ], taskRoleArn, networkMode, volumes, placementConstraints);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
