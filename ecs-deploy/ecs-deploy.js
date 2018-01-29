@@ -16,6 +16,12 @@ function aws(cmd) {
   return response;
 }
 
+function printUsage() {
+  console.log('Usage:');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--timeout 60]');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --container-definition-patch \'{"image":"image"}\' [--timeout 60]');
+}
+
 // take process arguments and convert them into an object
 const argv = (() => {
   const argv = {};
@@ -41,13 +47,34 @@ const argv = (() => {
   return argv;
 })();
 
-const required = ['region', 'cluster', 'service', 'image'];
-if (required.some(key => !argv[key])) {
-  console.log('Usage: node deploy-ecs.js --region region --cluster cluster --service service --image image [--timeout 60]');
+const required = ['region', 'cluster', 'service'];
+if (
+  required.some(key => !argv[key]) ||
+  (!argv.image && !argv['container-definition-patch']) ||
+  (argv.image && argv['container-definition-patch'])
+) {
+  printUsage();
   process.exit(1);
 }
 
 const {region, cluster, service, image} = argv;
+
+// validate container-definition
+let containerDefinitionPatch;
+if (image) {
+  containerDefinitionPatch = {image};
+} else {
+  try {
+    containerDefinitionPatch = JSON.parse(argv['container-definition-patch']);
+    if (('' + containerDefinitionPatch) !== '[object Object]') throw new Error('Invalid container-definition patch');
+  } catch (error) {
+    console.warn('Error parsing container definition');
+    console.error(error);
+    console.log('');
+    printUsage();
+    process.exit(1);
+  }
+}
 
 function getService() {
   return aws(`ecs describe-services --region "${region}" --cluster "${cluster}" --services "${service}" --output json`).services[0];
@@ -96,7 +123,7 @@ Promise.resolve()
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
-      {...containerDefinitions[0], image} // update image field
+      {...containerDefinitions[0], ...containerDefinitionPatch} // apply patch
     ], taskRoleArn, networkMode, volumes, placementConstraints);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
