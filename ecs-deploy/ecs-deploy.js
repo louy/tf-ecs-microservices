@@ -1,4 +1,7 @@
 const {execSync} = require('child_process');
+const https = require('https');
+const { URL } = require('url');
+const util = require('util');
 
 function red(string) {
   return `\x1b[31m${string}\x1b[0m`;
@@ -18,7 +21,7 @@ function aws(cmd) {
 
 function printUsage() {
   console.log('Usage:');
-  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--slack-channel channel --slack-token token]');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\']');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60]');
 }
@@ -143,6 +146,29 @@ Promise.resolve()
     console.log(red(`Timeout after ${maxTries * SLEEP} seconds`));
 
     console.log(`Rolling back to ${oldTaskDefinitionArn}`);
+    if (argv['slack-channel'] && argv['slack-token']) {
+      const POST_OPTIONS = {
+        hostname: 'hooks.slack.com',
+        path: token,
+        method: 'POST',
+      };
+      const body = {
+        channel: channel,
+        text: `<!${channel}>\nFailed to deploy \`${service}\` service using new Task Definition`,
+      };
+      const r = https
+        .request(POST_OPTIONS, (res) => {
+          res.setEncoding('utf8');
+          res.on('data', (data) => {
+            console.log(`Message Sent: ${data}`);
+          });
+        })
+      r.on('error', (e) => {
+          console.error(e);
+      });
+      r.write(util.format('%j', body));
+      r.end();
+    }
     updateService(oldTaskDefinitionArn);
 
     throw new Error(`Failed to deploy service ${service}`);
