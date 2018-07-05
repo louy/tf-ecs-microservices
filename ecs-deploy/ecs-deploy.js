@@ -82,12 +82,12 @@ function getTaskDefinition(arn) {
   return aws(`ecs describe-task-definition --region "${region}" --task-definition "${arn}" --output json`).taskDefinition;
 }
 
-function updateTaskDefinition(family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, compatibilities) {
+function updateTaskDefinition(family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities) {
   let params = [
     `--region "${region}"`,
     `--family "${family}"`,
     `--container-definitions '${JSON.stringify(containerDefinitions)}'`,
-    `--requires-compatibilities "${compatibilities}"`,
+    `--requires-compatibilities "${requiresCompatibilities}"`,
   ];
   if (taskRoleArn) {
     params.push(`--task-role-arn ${taskRoleArn}`);
@@ -116,14 +116,14 @@ Promise.resolve()
     const oldTaskDefinitionArn = getService().taskDefinition;
     console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
 
-    const {family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, compatibilities} = getTaskDefinition(oldTaskDefinitionArn);
+    const {family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities} = getTaskDefinition(oldTaskDefinitionArn);
     if (containerDefinitions.length !== 1) {
       throw new Error('Task definitions with more than one container are not supported');
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
       {...containerDefinitions[0], ...containerDefinitionPatch, image} // apply patch
-    ], taskRoleArn, networkMode, volumes, placementConstraints, compatibilities);
+    ], taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
     const newService = updateService(newTaskDefinition.taskDefinitionArn);
