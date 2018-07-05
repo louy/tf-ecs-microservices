@@ -1,4 +1,4 @@
-FROM kinihun/docker-node-awscli:latest
+FROM kinihun/awscli:latest
 
 COPY ecs-deploy ecs-deploy.js /usr/local/bin/
 
