@@ -82,7 +82,7 @@ function getTaskDefinition(arn) {
   return aws(`ecs describe-task-definition --region "${region}" --task-definition "${arn}" --output json`).taskDefinition;
 }
 
-function updateTaskDefinition(family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory, taskDefinitionArn) {
+function updateTaskDefinition(family, containerDefinitions, taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory) {
   let params = [
     `--region "${region}"`,
     `--family "${family}"`,
@@ -90,11 +90,9 @@ function updateTaskDefinition(family, containerDefinitions, taskRoleArn, network
     `--requires-compatibilities "${requiresCompatibilities}"`,
     `--cpu "${cpu}"`,
     `--memory "${memory}"`,
-    `--task-role-arn "${taskDefinitionArn}"`,
+    `--task-role-arn "${taskRoleArn}"`,
+    `--execution-role-arn "${executionRoleArn}"`,
   ];
-  if (taskRoleArn) {
-    params.push(`--task-role-arn ${taskRoleArn}`);
-  }
   if (networkMode) {
     params.push(`--network-mode ${networkMode}`);
   }
@@ -119,14 +117,14 @@ Promise.resolve()
     const oldTaskDefinitionArn = getService().taskDefinition;
     console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
 
-    const {family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory, taskDefinitionArn} = getTaskDefinition(oldTaskDefinitionArn);
+    const {family, containerDefinitions, taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory} = getTaskDefinition(oldTaskDefinitionArn);
     if (containerDefinitions.length !== 1) {
       throw new Error('Task definitions with more than one container are not supported');
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
       {...containerDefinitions[0], ...containerDefinitionPatch, image} // apply patch
-    ], taskRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory, taskDefinitionArn);
+    ], taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
     const newService = updateService(newTaskDefinition.taskDefinitionArn);
