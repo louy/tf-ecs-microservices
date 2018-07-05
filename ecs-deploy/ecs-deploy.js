@@ -90,9 +90,17 @@ function updateTaskDefinition(family, containerDefinitions, taskRoleArn, executi
     `--requires-compatibilities "${requiresCompatibilities}"`,
     `--cpu "${cpu}"`,
     `--memory "${memory}"`,
-    `--task-role-arn "${taskRoleArn}"`,
-    `--execution-role-arn "${executionRoleArn}"`,
   ];
+  if (taskRoleArn) {
+    params.push(`--task-role-arn ${taskRoleArn}`);
+  } else {
+    params.push(`--task-role-arn ""`);
+  }
+  if (executionRoleArn) {
+    params.push(`--execution-role-arn ${executionRoleArn}`);
+  } else {
+    params.push(`--execution-role-arn ""`);
+  }
   if (networkMode) {
     params.push(`--network-mode ${networkMode}`);
   }
