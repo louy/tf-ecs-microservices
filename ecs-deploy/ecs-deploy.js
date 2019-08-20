@@ -21,6 +21,7 @@ function printUsage() {
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\']');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60]');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60] [--remove-td-on-rollback]');
 }
 
 // take process arguments and convert them into an object
@@ -104,6 +105,10 @@ function updateService(taskDefinitionArn) {
   return aws(`ecs update-service --region "${region}" --cluster "${cluster}" --service "${service}" --task-definition "${taskDefinitionArn}" --output json`).service
 }
 
+function deregisterTaskDefinition(taskDefinitionArn) {
+  return aws(`ecs deregister-task-definition --task-definition "${taskDefinitionArn}" --output json`)
+}
+
 const SLEEP = 2;
 const maxTries = (parseInt(argv.timeout, 10) || 60) / SLEEP
 
@@ -144,6 +149,11 @@ Promise.resolve()
 
     console.log(`Rolling back to ${oldTaskDefinitionArn}`);
     updateService(oldTaskDefinitionArn);
+  
+    if (argv['remove-td-on-rollback']) {
+      console.log(`Deleting task definition ${newTaskDefinition.taskDefinitionArn}`);
+      deregisterTaskDefinition(newTaskDefinition.taskDefinitionArn);
+    }
 
     throw new Error(`Failed to deploy service ${service}`);
   })
