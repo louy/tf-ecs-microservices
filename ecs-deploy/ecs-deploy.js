@@ -106,7 +106,7 @@ function updateService(taskDefinitionArn) {
 }
 
 function deregisterTaskDefinition(taskDefinitionArn) {
-  return aws(`ecs deregister-task-definition --task-definition "${taskDefinitionArn}" --output json`)
+  return aws(`ecs deregister-task-definition --region "${region}" --task-definition "${taskDefinitionArn}" --output json`)
 }
 
 const SLEEP = 2;
