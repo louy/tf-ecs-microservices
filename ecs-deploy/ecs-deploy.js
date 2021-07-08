@@ -1,4 +1,7 @@
 const {execSync} = require('child_process');
+const https = require('https');
+const { URL } = require('url');
+const util = require('util');
 
 function red(string) {
   return `\x1b[31m${string}\x1b[0m`;
@@ -18,7 +21,7 @@ function aws(cmd) {
 
 function printUsage() {
   console.log('Usage:');
-  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image');
+  console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--slack-channel channel --slack-token token]');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\']');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60]');
   console.log('\tnode deploy-ecs.js --region region --cluster cluster --service service --image image [--container-definition-patch \'{"cpu":64}\'] [--timeout 60] [--remove-td-on-rollback]');
@@ -80,14 +83,24 @@ function getTaskDefinition(arn) {
   return aws(`ecs describe-task-definition --region "${region}" --task-definition "${arn}" --output json`).taskDefinition;
 }
 
-function updateTaskDefinition(family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints) {
+function updateTaskDefinition(family, containerDefinitions, taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory) {
   let params = [
     `--region "${region}"`,
     `--family "${family}"`,
     `--container-definitions '${JSON.stringify(containerDefinitions)}'`,
+    `--requires-compatibilities "${requiresCompatibilities}"`,
+    `--cpu "${cpu}"`,
+    `--memory "${memory}"`,
   ];
   if (taskRoleArn) {
     params.push(`--task-role-arn ${taskRoleArn}`);
+  } else {
+    params.push(`--task-role-arn ""`);
+  }
+  if (executionRoleArn) {
+    params.push(`--execution-role-arn ${executionRoleArn}`);
+  } else {
+    params.push(`--execution-role-arn ""`);
   }
   if (networkMode) {
     params.push(`--network-mode ${networkMode}`);
@@ -117,14 +130,14 @@ Promise.resolve()
     const oldTaskDefinitionArn = getService().taskDefinition;
     console.log(`Old task definion ARN: ${oldTaskDefinitionArn}`);
 
-    const {family, containerDefinitions, taskRoleArn, networkMode, volumes, placementConstraints} = getTaskDefinition(oldTaskDefinitionArn);
+    const {family, containerDefinitions, taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory} = getTaskDefinition(oldTaskDefinitionArn);
     if (containerDefinitions.length !== 1) {
       throw new Error('Task definitions with more than one container are not supported');
     }
 
     const newTaskDefinition = updateTaskDefinition(family, [
       {...containerDefinitions[0], ...containerDefinitionPatch, image} // apply patch
-    ], taskRoleArn, networkMode, volumes, placementConstraints);
+    ], taskRoleArn, executionRoleArn, networkMode, volumes, placementConstraints, requiresCompatibilities, cpu, memory);
     console.log(`New task definion ARN: ${newTaskDefinition.taskDefinitionArn}`);
 
     const newService = updateService(newTaskDefinition.taskDefinitionArn);
@@ -148,6 +161,29 @@ Promise.resolve()
     console.log(red(`Timeout after ${maxTries * SLEEP} seconds`));
 
     console.log(`Rolling back to ${oldTaskDefinitionArn}`);
+    if (argv['slack-channel'] && argv['slack-token']) {
+      const POST_OPTIONS = {
+        hostname: 'hooks.slack.com',
+        path: token,
+        method: 'POST',
+      };
+      const body = {
+        channel: channel,
+        text: `<!${channel}>\nFailed to deploy \`${service}\` service using new Task Definition`,
+      };
+      const r = https
+        .request(POST_OPTIONS, (res) => {
+          res.setEncoding('utf8');
+          res.on('data', (data) => {
+            console.log(`Message Sent: ${data}`);
+          });
+        })
+      r.on('error', (e) => {
+          console.error(e);
+      });
+      r.write(util.format('%j', body));
+      r.end();
+    }
     updateService(oldTaskDefinitionArn);
   
     if (argv['remove-td-on-rollback']) {
